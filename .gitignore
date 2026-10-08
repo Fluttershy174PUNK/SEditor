@@ -1,0 +1,6 @@
+node_modules/
+# Собранная страница — артефакт, но в репозиторий её кладём: app/editor.html в git.
+.build/
+dev-dist/
+.vite/
+*.log

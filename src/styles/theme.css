@@ -1,0 +1,236 @@
+/* Пиксельная тема в духе NES.css: жирные рамки, жёсткие тени без размытия,
+   кнопки «вдавливаются» при нажатии, пиксельный шрифт «Press Start 2P»
+   (Google Fonts, есть кириллица; без сети деградирует в системный моноширинный),
+   палитра NES-семантик: зелёный success / синий primary / жёлтый warn / красный error. */
+:root {
+  color-scheme: dark; /* нативные контролы (color picker, скроллы) тоже тёмные */
+
+  --bg: #0b0d14;
+  --panel: #161a28;
+  --panel-2: #212639;
+  --panel-3: #2c3247;
+  --ink: #f4f6ff;
+  --ink-dim: #8e97b8;
+  --ink-strong: #05070c;
+  --accent: #92cc68;
+  --accent-2: #209cee;
+  --warn: #f7d51d;
+  --warn-2: #ffe066;
+  --err: #e76f51;
+  --line: #39405e;
+  --line-strong: #5a6494;
+  --shadow: 4px 4px 0 var(--ink-strong);
+  --px: 3px; /* толщина пиксельной рамки */
+
+  --font-pixel: 'Press Start 2P', ui-monospace, 'DejaVu Sans Mono', 'Courier New', monospace;
+  --font-mono: ui-monospace, 'DejaVu Sans Mono', 'Courier New', monospace;
+
+  --xy-background-color: var(--bg);
+  --xy-background-pattern-color: #232a41;
+  --xy-edge-stroke: #cfe3f5;
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-stroke-width: 2;
+  --xy-node-border: 2px solid var(--line-strong);
+  --xy-node-border-selected: 2px solid var(--accent);
+  --xy-node-background-color: var(--panel-2);
+  --xy-node-color: var(--ink);
+  --xy-handle-background-color: var(--accent-2);
+  --xy-handle-border-color: var(--ink-strong);
+  --xy-selection-background-color: rgb(148 204 104 / 12%);
+  --xy-selection-border: 2px dashed var(--accent);
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 2;
+  --xy-resize-background-color: var(--warn);
+  --xy-attribution-background-color: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: none;
+  text-rendering: geometricPrecision;
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'top top'
+    'main side'
+    'bottom bottom';
+  overflow: hidden;
+}
+
+/* CRT-развёртка поверх всего — очень деликатно */
+#app::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 2.5%) 0 1px, transparent 1px 3px);
+  z-index: 9999;
+  mix-blend-mode: overlay;
+}
+
+h2,
+h3 {
+  font-family: var(--font-pixel);
+  letter-spacing: 0.06em;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: var(--px) solid var(--ink-strong);
+  border-radius: 0;
+  padding: 3px 7px;
+  box-shadow: inset 2px 2px 0 rgb(5 7 12 / 45%);
+}
+
+/* --- кнопка: грань + жёсткая тень; :active — «вдавливается» в поле --- */
+button {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: var(--px) solid var(--ink-strong);
+  border-radius: 0;
+  padding: 5px 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background: var(--panel-3);
+  color: var(--accent);
+}
+
+button:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--ink-strong);
+}
+
+button.active {
+  background: var(--accent);
+  color: var(--ink-strong);
+  border-color: var(--ink-strong);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+label {
+  font-family: var(--font-pixel);
+  color: var(--ink-dim);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+}
+
+svg.icon {
+  shape-rendering: crispEdges;
+  image-rendering: pixelated;
+  display: block;
+}
+
+::selection {
+  background: var(--accent-2);
+  color: var(--ink-strong);
+}
+
+/* --- ресайз узлов: пиксельные квадраты-ручки, линии сторон — пунктир --- */
+/* Цветовая шкала: жёлтый — якоря ресайза, синий — порты связей. */
+.svelte-flow .svelte-flow__resize-control.handle,
+.svelte-flow .svelte-flow__resize-control.line {
+  /* Ручки лежат на границе узла — держим их выше его графики. */
+  z-index: 6;
+}
+
+.svelte-flow .svelte-flow__resize-control.handle {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--ink-strong);
+  border-radius: 0;
+  background: var(--warn);
+  box-shadow: 2px 2px 0 var(--ink-strong);
+}
+
+.svelte-flow .svelte-flow__resize-control.handle::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+
+.svelte-flow .svelte-flow__resize-control.handle:hover {
+  background: var(--warn-2);
+}
+
+.svelte-flow .svelte-flow__resize-control.line {
+  border-color: var(--warn);
+  opacity: 0.45;
+}
+
+/* Невидимая полоса захвата: тонкую линию стороны трудно попасть мышью. */
+.svelte-flow .svelte-flow__resize-control.line::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.svelte-flow .svelte-flow__resize-control.line:hover {
+  opacity: 1;
+}
+
+/* Разделители растягиваются своими концами (см. DividerNode),
+   библиотечный ресайзер им не нужен. */
+
+/* --- пиксельные скроллбары --- */
+::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+  border-left: 2px solid var(--ink-strong);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid var(--ink-strong);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-2);
+}

@@ -1,0 +1,327 @@
+<script>
+  // Оболочка редактора: бар, холст, палитра, инспектор, нижняя строка,
+  // модалка PNG и общие горячие клавиши.
+  import { SvelteFlowProvider } from '@xyflow/svelte';
+  import TopBar from './TopBar.svelte';
+  import FlowCanvas from './FlowCanvas.svelte';
+  import Palette from './Palette.svelte';
+  import Inspector from './Inspector.svelte';
+  import BottomBar from './BottomBar.svelte';
+  import Dialog from './Dialog.svelte';
+  import { board } from '../lib/board.svelte.js';
+  import { SHAPES, isDivider } from '../lib/config.js';
+  import { exportPng } from '../lib/exportPng.js';
+  import * as api from '../lib/api.js';
+  import { t } from '../lib/i18n.svelte.js';
+
+  let pngOpen = $state(false);
+  let pngName = $state('');
+  let pngFolder = $state('exports');
+  let pngSize = $state('');
+  let fileInput;
+  let localFileHandle = null;
+  let downloadHinted = false;
+
+  const fileName = () => `${(board.name || 'schema').replace(/[\\/:*?"<>|]/g, '-').replace(/\.json$/i, '')}.json`;
+  const isPickerCancel = (error) => error?.name === 'AbortError';
+
+  const loadLocalFile = async (file, handle = null) => {
+    try {
+      const data = JSON.parse(await file.text());
+      board.loadSchema(data);
+      if (!board.name) board.name = file.name.replace(/\.json$/i, '');
+      board.path = file.name;
+      localFileHandle = handle;
+      board.notify(`${t('loaded')}: ${file.name}`);
+    } catch (err) {
+      board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
+  const openRecentFile = async (path) => {
+    try {
+      const { data } = await api.readSchema(path);
+      board.loadSchema(data);
+      localFileHandle = null;
+      board.notify(`${t('loaded')}: ${path}`);
+    } catch (err) {
+      board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
+  const openFiles = async () => {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: 'SEditor schema', accept: { 'application/json': ['.json'] } }]
+        });
+        await loadLocalFile(await handle.getFile(), handle);
+      } catch (err) {
+        if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
+      }
+    } else {
+      fileInput?.click();
+    }
+  };
+
+  const writeLocalFile = async (handle) => {
+    const name = fileName();
+    const payload = board.payload();
+    payload.meta.name = board.name || name.replace(/\.json$/i, '');
+    const contents = JSON.stringify(payload, null, 2);
+    if (handle) {
+      if (handle.requestPermission && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+        throw new Error(t('filePermissionDenied'));
+      }
+      const writable = await handle.createWritable();
+      await writable.write(contents);
+      await writable.close();
+      localFileHandle = handle;
+    } else {
+      const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    board.path = handle?.name || name;
+    board.dirty = false;
+    board.notify(`${t('saved')}: ${board.path}`);
+  };
+
+  const saveAsFiles = async () => {
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName(),
+          types: [{ description: 'SEditor schema', accept: { 'application/json': ['.json'] } }]
+        });
+        await writeLocalFile(handle);
+      } catch (err) {
+        if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
+      }
+    } else {
+      try {
+        await writeLocalFile(null);
+        // Firefox/Safari не умеют showSaveFilePicker — напоминаем один раз за сессию.
+        if (!downloadHinted) {
+          downloadHinted = true;
+          board.notify(t('saveAsBrowserHint'), 'error');
+        }
+      } catch (err) {
+        board.notify(`${t('error')}: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  const saveFile = async () => {
+    if (!localFileHandle) return saveAsFiles();
+    try {
+      await writeLocalFile(localFileHandle);
+    } catch (err) {
+      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
+  const onFallbackFile = (event) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (file) loadLocalFile(file);
+  };
+
+  const stamp = () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  };
+
+  const openPng = () => {
+    pngName = `${board.name || 'schema'}-${stamp()}`;
+    pngFolder = 'exports';
+    pngSize = '';
+    pngOpen = true;
+  };
+
+  const savePng = async () => {
+    try {
+      const { dataUrl, width, height } = exportPng({ nodes: board.nodes, edges: board.edges, title: board.name });
+      pngSize = `${width}×${height}`;
+      const folder = (pngFolder || '').replace(/^\/+|\/+$/g, '');
+      const path = `${folder ? `${folder}/` : ''}${(pngName || 'schema').replace(/\.png$/i, '')}.png`;
+      const result = await api.writePng(path, dataUrl);
+      board.notify(`${t('saved')}: ${result.path}`);
+      pngOpen = false;
+    } catch (err) {
+      board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
+  const isTyping = (target) => {
+    const tag = target?.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+  };
+
+  /** Выделить всё на поле. */
+  const selectAll = () =>
+    board.selectNodes(
+      board.nodes.filter((n) => !n.hidden).map((n) => n.id),
+      board.edges.filter((e) => !e.hidden).map((e) => e.id)
+    );
+
+  /** Сдвиг выделенного стрелками (Shift — крупный шаг). */
+  const nudge = (dx, dy) => {
+    if (!board.selectedNodes.length) return;
+    board.mark(true);
+    const step = { x: dx, y: dy };
+    for (const id of board.selectedNodes) {
+      const node = board.nodes.find((n) => n.id === id);
+      if (!node) continue;
+      // Разделитель двигается только по своей оси.
+      if (isDivider(node.data?.shape)) {
+        const horizontal = SHAPES[node.data.shape].divider === 'horizontal';
+        board.updateNode(id, {
+          position: {
+            x: node.position.x + (horizontal ? 0 : step.x),
+            y: node.position.y + (horizontal ? step.y : 0)
+          }
+        });
+      } else {
+        board.updateNode(id, { position: { x: node.position.x + step.x, y: node.position.y + step.y } });
+      }
+    }
+    board.syncExtent();
+  };
+
+  // Удаление выделенного: узлы + связи одним шагом истории (см. board.deleteNodes).
+  const deleteSelection = () => board.deleteNodes(board.selectedNodes, board.selectedEdges);
+
+  const duplicateSelection = () => {
+    if (!board.selectedNodes.length) return;
+    board.duplicateNodes([...board.selectedNodes]);
+  };
+
+  // Горячие клавиши: undo/redo, save, выделение, дублирование, удаление, сдвиг.
+  const onKey = (event) => {
+    if (isTyping(event.target)) return;
+    if (pngOpen) return;
+    const mod = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    if (mod && key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) board.redo();
+      else board.undo();
+      return;
+    }
+    if (mod && key === 'y') {
+      event.preventDefault();
+      board.redo();
+      return;
+    }
+    if (mod && key === 's') {
+      event.preventDefault();
+      saveFile();
+      return;
+    }
+    if (mod && key === 'a') {
+      event.preventDefault();
+      selectAll();
+      return;
+    }
+    if (mod && key === 'd') {
+      event.preventDefault();
+      duplicateSelection();
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (!board.selectedNodes.length && !board.selectedEdges.length) return;
+      event.preventDefault();
+      deleteSelection();
+      return;
+    }
+    if (event.key === 'Escape') {
+      board.selectNodes([]);
+      return;
+    }
+
+    // Стрелки: ±1, с Shift — ±10 (сетка 8/привязка учитывается в board.syncExtent).
+    const step = event.shiftKey ? 10 : 1;
+    const moves = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] };
+    if (moves[event.key]) {
+      if (!board.selectedNodes.length) return;
+      event.preventDefault();
+      nudge(...moves[event.key]);
+    }
+  };
+
+  const onBeforeUnload = (event) => {
+    if (!board.dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+</script>
+
+<svelte:window onkeydown={onKey} onbeforeunload={onBeforeUnload} />
+
+<SvelteFlowProvider>
+  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onsaveto={saveAsFiles} onpng={openPng} />
+  <FlowCanvas />
+  <!-- Правая колонка: палитра сверху, свойства под ней. -->
+  <aside class="sidebar">
+    <Palette />
+    <Inspector />
+  </aside>
+  <BottomBar />
+</SvelteFlowProvider>
+
+<input bind:this={fileInput} class="file-input" type="file" accept=".json,application/json" onchange={onFallbackFile} />
+
+{#if pngOpen}
+  <Dialog title={t('pngDialog')} onclose={() => (pngOpen = false)}>
+    <div>
+      <label for="png-name">{t('fileName')}</label>
+      <input id="png-name" bind:value={pngName} />
+    </div>
+    <div>
+      <label for="png-folder">{t('pngFolder')}</label>
+      <input id="png-folder" bind:value={pngFolder} />
+    </div>
+    {#if pngSize}<p class="size">{pngSize}</p>{/if}
+    {#snippet footer()}
+      <button onclick={() => (pngOpen = false)}>{t('cancel')}</button>
+      <button class="primary" onclick={savePng}>{t('confirm')}</button>
+    {/snippet}
+  </Dialog>
+{/if}
+
+<style>
+  .sidebar {
+    grid-area: side;
+    display: flex;
+    flex-direction: column;
+    width: 268px;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--panel);
+    border-left: 2px solid var(--line);
+  }
+
+  .size {
+    color: var(--ink-dim);
+  }
+
+  .file-input {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  :global(button.primary) {
+    background: var(--accent);
+    color: #06110b;
+    border-color: var(--accent);
+  }
+</style>
