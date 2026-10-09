@@ -1,5 +1,4 @@
 {
-  "ignore": [
-    "editor.html"
-  ]
+  "$schema": "https://raw.githubusercontent.com/apmantza/pi-lens/master/docs/schema/pi-lens-config-v1.json",
+  "ignore": ["app/editor.html", "example_scheme/*.html"]
 }
