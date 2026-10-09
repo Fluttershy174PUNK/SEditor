@@ -87,6 +87,16 @@ export const DICT = {
   loaded: { ru: 'Загружено', en: 'Loaded' },
   error: { ru: 'Ошибка', en: 'Error' },
   pngFolder: { ru: 'Папка (абсолютный путь или от корня проекта)', en: 'Folder (absolute or from project root)' },
+  filePermissionDenied: { ru: 'Нет разрешения на запись в папку', en: 'Write permission for the folder was denied' },
+  offlineHint: {
+    ru: 'Ярлык открывает схему сразу. Сохранение на диск требует сервера: node .SEditor/app/server.js',
+    en: 'The launcher opens the schema directly. Saving to disk needs the server: node .SEditor/app/server.js'
+  },
+  offlineSaveHint: {
+    ru: 'Без сервера файл ушёл в загрузки. Чтобы писать рядом со схемой, запустите node .SEditor/app/server.js',
+    en: 'Without the server the file went to Downloads. To write next to the schema run node .SEditor/app/server.js'
+  },
+  shortcutWritten: { ru: 'Ярлык обновлён', en: 'Launcher updated' },
   languages: { ru: 'Язык', en: 'Language' },
   zoomIn: { ru: 'Приблизить', en: 'Zoom in' },
   zoomOut: { ru: 'Отдалить', en: 'Zoom out' },

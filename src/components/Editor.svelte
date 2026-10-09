@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   // Оболочка редактора: бар, холст, палитра, инспектор, нижняя строка,
   // модалка PNG и общие горячие клавиши.
   import { SvelteFlowProvider } from '@xyflow/svelte';
@@ -11,6 +12,8 @@
   import { board } from '../lib/board.svelte.js';
   import { SHAPES, isDivider } from '../lib/config.js';
   import { exportPng } from '../lib/exportPng.js';
+  import { buildLauncher, editorUrlFromSchemaDir } from '../lib/launcher.js';
+  import { downloadBlob, resolveOutputDir, writeFileToDir } from '../lib/fsHandles.js';
   import * as api from '../lib/api.js';
   import { t } from '../lib/i18n.svelte.js';
 
@@ -21,9 +24,46 @@
   let fileInput;
   let localFileHandle = null;
   let downloadHinted = false;
+  // Путь схемы из ярлыка (hash ?p=) — цель для PNG/ярлыка, когда сервера нет.
+  let schemaPathParam = '';
+  // Режим без сервера: file:// с данными в hash (см. app/shortcut.html).
+  let offline = $state(false);
 
   const fileName = () => `${(board.name || 'schema').replace(/[\\/:*?"<>|]/g, '-').replace(/\.json$/i, '')}.json`;
   const isPickerCancel = (error) => error?.name === 'AbortError';
+
+  /** Данные схемы из hash ярлыка: #d=<json>&p=<путь>. */
+  const readHashSchema = () => {
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw) return null;
+    const params = new URLSearchParams(raw);
+    const data = params.get('d');
+    if (!data) return null;
+    return { text: data, path: params.get('p') || '' };
+  };
+
+  onMount(() => {
+    const fromHash = readHashSchema();
+    const path = new URLSearchParams(location.search).get('path');
+    if (fromHash) {
+      // Ярлык: схема уже внутри, сервер не нужен.
+      offline = true;
+      schemaPathParam = fromHash.path;
+      try {
+        board.loadSchema(JSON.parse(fromHash.text));
+        board.path = fromHash.path || '';
+      } catch (err) {
+        board.notify(`${t('error')}: ${err.message}`, 'error');
+      }
+      // Данные в адресе не оставляем: перезагрузка страницы их не подхватит.
+      history.replaceState(null, '', location.pathname + location.search);
+    } else if (path) {
+      board.openPath(path);
+    } else if (location.protocol === 'file:') {
+      offline = true;
+      board.notify(t('offlineHint'), 'error');
+    }
+  });
 
   const loadLocalFile = async (file, handle = null) => {
     try {
@@ -115,10 +155,39 @@
     }
   };
 
+  /** Сохранить JSON схемы без сервера: папку выбирают один раз, handle живёт в IndexedDB. */
+  const saveOffline = async () => {
+    const name = fileName();
+    const payload = board.payload();
+    payload.meta.name = board.name || name.replace(/\.json$/i, '');
+    const contents = JSON.stringify(payload, null, 2);
+    const dir = await resolveOutputDir({ prompt: true });
+    if (await writeFileToDir(dir, name, contents)) {
+      board.path = name;
+      board.dirty = false;
+      board.notify(`${t('saved')}: ${name}`);
+      // Ярлык рядом со схемой держим актуальным.
+      if (schemaPathParam) await writeShortcutOffline();
+      return true;
+    }
+    await writeLocalFile(null);
+    return true;
+  };
+
   const saveFile = async () => {
+    if (offline) {
+      try {
+        return await saveOffline();
+      } catch (err) {
+        if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
+        return false;
+      }
+    }
     if (!localFileHandle) return saveAsFiles();
     try {
       await writeLocalFile(localFileHandle);
+      // Ярлык всегда соответствует последней сохранённой схеме.
+      await api.createShortcut(board.path).catch(() => null);
     } catch (err) {
       if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
     }
@@ -143,17 +212,74 @@
     pngOpen = true;
   };
 
+  /** Перегенерировать ярлык без сервера: файл ложится рядом со схемой. */
+  const writeShortcutOffline = async () => {
+    const schemaPath = schemaPathParam;
+    if (!schemaPath) throw new Error(t('shortcutNoDir'));
+    const name = board.name || schemaPath.replace(/^.*\//, '').replace(/\.json$/i, '');
+    const schema = board.payload();
+    schema.meta.name = name;
+    const html = buildLauncher({
+      schema,
+      name,
+      schemaPathFromAppDir: schemaPath,
+      editorUrl: editorUrlFromSchemaDir(schemaPath)
+    });
+    const dir = await resolveOutputDir({ prompt: true });
+    if (await writeFileToDir(dir, `${name}.html`, html)) return `${name}.html`;
+    downloadBlob(new Blob([html], { type: 'text/html' }), `${name}.html`);
+    throw new Error(t('offlineSaveHint'));
+  };
+
+  const openShortcut = async () => {
+    if (!board.path && !schemaPathParam) {
+      board.notify(t('shortcutNoDir'), 'error');
+      return;
+    }
+    if (board.dirty) {
+      const saved = await board.save();
+      if (!saved || board.dirty) return;
+    }
+    try {
+      if (offline) {
+        const written = await writeShortcutOffline();
+        board.notify(`${t('shortcutWritten')}: ${written}`);
+        return;
+      }
+      const result = await api.createShortcut(board.path);
+      if (!result.saved) throw new Error('Backend не подтвердил создание ярлыка.');
+      board.notify(`${t('shortcutWritten')}: ${result.path}`);
+    } catch (err) {
+      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
   const savePng = async () => {
     try {
       const { dataUrl, width, height } = exportPng({ nodes: board.nodes, edges: board.edges, title: board.name });
       pngSize = `${width}×${height}`;
+      const filename = `${(pngName || 'schema').replace(/\.png$/i, '')}.png`;
+      if (offline) {
+        // Рядом со схемой: папку выбирают один раз, handle живёт в IndexedDB.
+        const dir = await resolveOutputDir({ prompt: true });
+        const blob = await (await fetch(dataUrl)).blob();
+        if (await writeFileToDir(dir, filename, blob)) {
+          board.notify(`${t('saved')}: ${filename}`);
+          pngOpen = false;
+          return;
+        }
+        downloadBlob(blob, filename);
+        board.notify(`${t('offlineSaveHint')} (${filename})`, 'error');
+        pngOpen = false;
+        return;
+      }
       const folder = (pngFolder || '').replace(/^\/+|\/+$/g, '');
-      const path = `${folder ? `${folder}/` : ''}${(pngName || 'schema').replace(/\.png$/i, '')}.png`;
+      const path = `${folder ? `${folder}/` : ''}${filename}`;
       const result = await api.writePng(path, dataUrl);
       board.notify(`${t('saved')}: ${result.path}`);
       pngOpen = false;
     } catch (err) {
-      board.notify(`${t('error')}: ${err.message}`, 'error');
+      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
     }
   };
 
@@ -260,12 +386,13 @@
     event.preventDefault();
     event.returnValue = '';
   };
+
 </script>
 
 <svelte:window onkeydown={onKey} onbeforeunload={onBeforeUnload} />
 
 <SvelteFlowProvider>
-  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onsaveto={saveAsFiles} onpng={openPng} />
+  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onsaveto={saveAsFiles} onpng={openPng} onshortcut={openShortcut} />
   <FlowCanvas />
   <!-- Правая колонка: палитра сверху, свойства под ней. -->
   <aside class="sidebar">

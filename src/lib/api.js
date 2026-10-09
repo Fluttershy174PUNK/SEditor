@@ -23,6 +23,14 @@ export const writeSchema = (path, data) =>
     body: JSON.stringify({ path, data })
   });
 
+/** Создать рядом с JSON ярлык, который всегда ссылается на исходный файл. */
+export const createShortcut = (path) =>
+  req('/api/shortcut', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ path })
+  });
+
 /** Сохранение PNG (dataUrl) на диск. */
 export const writePng = (path, dataUrl) =>
   req('/api/png', {

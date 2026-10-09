@@ -4,7 +4,9 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createShortcut } from './create-shortcut.mjs';
 
 // База — сам каталог app/: скопированная папка app/ работает автономно.
 const APP = path.dirname(fileURLToPath(import.meta.url));
@@ -17,11 +19,12 @@ const PORT = Number(process.env.PORT || 5174);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 64 * 1024 * 1024;
 
-// Папки со схемами для списка последних: сам app/ и, если рядом есть репозиторий,
-// example_scheme/. Папка, которой нет, просто пропускается.
-const SCHEMA_DIRS = [APP, path.join(HOME, 'example_scheme')].filter((dir) => fs.existsSync(dir));
+// Папки со схемами для списка последних: сам app/, корень проекта рядом с ним
+// (в раскладке .SEditor/ схемы лежат рядом с app/) и catalog example_scheme/.
+// Папка, которой нет, просто пропускается.
+const SCHEMA_DIRS = [...new Set([HOME, APP, path.join(HOME, 'example_scheme')])].filter((dir) => fs.existsSync(dir));
 // Служебные json (манифесты, конфиги) в списке схем не нужны.
-const MANIFESTS = new Set(['package.json', 'package-lock.json', 'tsconfig.json', 'jsconfig.json', 'components.json']);
+const MANIFESTS = new Set(['package.json', 'package-lock.json', 'tsconfig.json', 'jsconfig.json', 'components.json', 'version.json']);
 const SCAN_SKIP = new Set(['node_modules', 'src', '.git', '.build', 'dev-dist']);
 
 const MIME = {
@@ -150,6 +153,33 @@ async function api(req, res, url) {
     const parsed = parseJson(await fsp.readFile(abs, 'utf8'));
     if (!parsed) return json(res, 422, { error: 'invalid json in schema file' });
     return json(res, 200, { path: toRel(abs), data: parsed });
+  }
+
+  if (action === 'runtime' && req.method === 'GET') {
+    const manifest = parseJson(await fsp.readFile(path.join(APP, 'version.json'), 'utf8'));
+    if (!manifest || manifest.name !== 'SEditor' || !manifest.files) return json(res, 500, { error: 'invalid SEditor runtime manifest' });
+    const files = {};
+    for (const [file, expected] of Object.entries(manifest.files)) {
+      if (!['editor.html', 'server.js', 'create-shortcut.mjs', 'shortcut.html', 'launcher.js', 'editor.test.mjs', 'version.test.mjs'].includes(file)) {
+        return json(res, 500, { error: `unexpected runtime file: ${file}` });
+      }
+      const data = await fsp.readFile(path.join(APP, file));
+      const hash = createHash('sha256').update(data).digest('hex');
+      if (hash !== expected) return json(res, 409, { error: `runtime integrity check failed: ${file}` });
+      files[file] = data.toString('base64');
+    }
+    return json(res, 200, { version: manifest.version, files });
+  }
+
+  if (action === 'shortcut' && req.method === 'POST') {
+    const payload = parseJson(await readBody(req));
+    if (!payload || typeof payload.path !== 'string') return json(res, 400, { error: 'schema path required' });
+    try {
+      const result = await createShortcut(payload.path, { appDir: ROOT, port: PORT });
+      return json(res, 200, { path: toRel(result.path), saved: true });
+    } catch (error) {
+      return json(res, 400, { error: error.message });
+    }
   }
 
   if (action === 'schema' && req.method === 'POST') {

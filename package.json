@@ -7,7 +7,7 @@
     "build": "vite build --config app/vite.config.js",
     "dev": "vite --config app/dev.config.js",
     "start": "node app/server.js",
-    "test": "node src/lib/geometry.test.js"
+    "test": "node src/lib/geometry.test.js && node app/editor.test.mjs && node app/version.test.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
