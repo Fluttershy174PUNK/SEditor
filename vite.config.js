@@ -1,22 +1,23 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { rename, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 // SEditor собирается в ОДИН самодостаточный editor.html: весь CSS и JS внутри него.
 // Готовую страницу можно просто открыть в браузере (file://) или положить на статику.
 //
-// Конфиг живёт в app/, исходники — в ../src/. Сборка идёт во временную папку
-// app/.build/, затем готовый файл переносится в app/editor.html. Напрямую писать
-// в app/ нельзя: Vite принял бы шаблон за выходной файл и затёр его.
-const APP = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(APP, '..');
+// Конфиг лежит в корне (стандартная точка входа Vite), исходники — в src/,
+// выход — в app/. Сборка идёт во временную папку app/.build/, затем готовый файл
+// переносится в app/editor.html. Напрямую писать в app/ нельзя: Vite принял бы
+// шаблон за выходной файл и затёр его.
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const APP = join(ROOT, 'app');
 
 export default defineConfig({
   root: ROOT,
   plugins: [
-    svelte({ configFile: join(APP, 'svelte.config.js') }),
+    svelte({ configFile: join(ROOT, 'svelte.config.js') }),
     {
       name: 'seditor-single-file',
       enforce: 'post',

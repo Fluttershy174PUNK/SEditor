@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "vite build --config app/vite.config.js",
-    "dev": "vite --config app/dev.config.js",
+    "build": "vite build",
+    "dev": "vite --config dev.config.js",
     "start": "node app/server.js",
     "test": "node src/lib/geometry.test.js && node app/editor.test.mjs && node app/version.test.mjs"
   },

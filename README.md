@@ -90,7 +90,9 @@ node app/server.js     # → http://127.0.0.1:5174/editor.html
 </table>
 
 Зоны, уровни и стадии при сохранении пересчитываются из геометрии и записываются
-в JSON как взаимосвязи объекта (`zones`, `levels`, `stages`).
+в JSON взаимосвязями объекта (`zones`, `level`, `stage`). Это поля-выходы: редактор
+считает их сам, руками их писать не нужно. Полное описание формата —
+[`docs/schema-format.md`](docs/schema-format.md).
 
 ### Горячие клавиши
 
@@ -126,7 +128,7 @@ node app/server.js     # → http://127.0.0.1:5174/editor.html
         "labelPos": "inside",
         "desc": "",
         "zones": ["z1"],
-        "levels": [{ "id": "l1", "side": "above" }]
+        "level": "L1"
       }
     }
   ],
@@ -153,6 +155,9 @@ node app/server.js     # → http://127.0.0.1:5174/editor.html
 | `edge.type` | `straight`, `step`, `smoothstep` |
 | `data.dash` | `solid`, `dashed`, `dotted` |
 | `data.marker` | `none`, `arrow`, `triangle`, `circle` |
+
+> Полный формат, геометрические правила зон / уровней / стадий и подводные камни —
+> [`docs/schema-format.md`](docs/schema-format.md). Он авторитетен при расхождениях.
 
 ---
 
@@ -193,12 +198,17 @@ npm test        # геометрия + регрессия ярлыков и back
 
 > `app/editor.html` — **артефакт сборки**, не редактируйте его вручную. Правьте `src/`
 > и запускайте `npm run build`. Контрольные суммы релиза лежат в `app/version.json`.
+> Сборка воспроизводима из любой директории (хеши svelte-классов считаются от
+> содержимого CSS, а не от пути файла).
 
 ---
 
 ## Структура
 
 ```text
+vite.config.js           сборка в один app/editor.html (стандартная точка входа Vite)
+dev.config.js            dev-сервер с живой перезагрузкой (npm run dev)
+svelte.config.js         компилятор Svelte: runes + воспроизводимые хеши классов
 app/                     рантайм: редактор, backend, генератор ярлыков
   editor.html            ИСПОЛНЯЕМАЯ СТРАНИЦА — собранный из src/ один файл
   server.js              статика + файловый API без зависимостей
@@ -208,7 +218,6 @@ app/                     рантайм: редактор, backend, генера
   editor.test.mjs        регрессия ярлыков и backend
   version.test.mjs       проверка контрольных сумм релиза
   version.json           версия рантайма и sha256 каждого файла
-  vite/dev/svelte.config.js   сборка и dev-сервер
 src/                     исходники; собирается в app/editor.html
   lib/                   config, geometry, schema, board, history, i18n, exportPng,
                          api, launcher, fsHandles, icons
@@ -216,7 +225,13 @@ src/                     исходники; собирается в app/editor.
                          EdgePath, EdgeFields, nodes/, PixelIcon
 example_scheme/          пример схемы и его HTML-ярлык
 docs/editor.png          скриншот для README
+docs/schema-format.md    каноническое описание формата схемы v1
+LICENSE                  MIT
 ```
+
+`app/` — целиком **поставляемый бандл**: те же файлы кладутся в `.SEditor/app/`
+агентным навыком [`SEskill`](https://github.com/Fluttershy174PUNK/SEskill) и лежат
+рядом со схемами. Конфигов сборки в `app/` нет — их копировать незачем.
 
 `app/editor.html` собран и лежит в репозитории, поэтому клонированный проект работает сразу.
 
@@ -232,4 +247,4 @@ docs/editor.png          скриншот для README
 
 ## Лицензия
 
-Лицензия не указана. Открывайте issue, если нужна явная.
+MIT — см. [LICENSE](LICENSE).
