@@ -170,6 +170,7 @@
     selectionKey={['Shift']}
     multiSelectionKey={['Shift', 'Meta', 'Control']}
     elevateNodesOnSelect={false}
+    zIndexMode="manual"
     defaultEdgeOptions={{ type: 'straight' }}
     proOptions={{ hideAttribution: true }}
     ariaLabelConfig={{ nodeAriaLabel: t('shape') }}

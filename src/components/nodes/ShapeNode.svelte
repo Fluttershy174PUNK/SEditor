@@ -2,7 +2,7 @@
   // Один компонент на все элементы: 7 фигур + надпись + таблица + зона + уровень.
   // Общая обвязка: 4 грани-метки для связей, подпись, ресайз, удаление, бейджи взаимосвязей.
   import { Handle, NodeResizer, Position } from '@xyflow/svelte';
-  import { SHAPES, SIDES } from '../../lib/config.js';
+  import { FILL_COLORS, SHAPES, SIDES } from '../../lib/config.js';
   import { board } from '../../lib/board.svelte.js';
   import { t } from '../../lib/i18n.svelte.js';
 
@@ -20,6 +20,7 @@
   const w = $derived(width ?? spec.w);
   const h = $derived(height ?? spec.h);
   const pos = $derived(data?.labelPos || 'inside');
+  const fill = $derived(FILL_COLORS.includes(data?.fill) ? `color-mix(in srgb, ${data.fill} 24%, var(--panel-2))` : 'var(--panel-2)');
   const isLayout = $derived(shape === 'zone');
   const tableRows = $derived(Math.max(1, data?.rows ?? 3) + (data?.header ? 1 : 0));
   const tableCols = $derived(Math.max(1, data?.cols ?? 3));
@@ -69,6 +70,7 @@
   class:selected
   class:zone={shape === 'zone'}
   class:text={shape === 'label'}
+  style:--node-fill={fill}
   style:width={`${w}px`}
   style:height={`${h}px`}
   style:background={shape === 'zone' && data?.fill ? data.fill : undefined}
@@ -126,16 +128,17 @@
   {:else if !isLayout && shape !== 'label'}
     <svg class="shape" viewBox="0 0 {w} {h}" width={w} height={h} preserveAspectRatio="none" aria-hidden="true">
       {#if shape === 'rect' || shape === 'square'}
-        <rect x="1" y="1" width={Math.max(0, w - 2)} height={Math.max(0, h - 2)} />
+        <rect x="1" y="1" width={Math.max(0, w - 2)} height={Math.max(0, h - 2)} style:fill />
       {:else if shape === 'circle' || shape === 'ellipse'}
-        <ellipse cx={w / 2} cy={h / 2} rx={Math.max(0, w / 2 - 1)} ry={Math.max(0, h / 2 - 1)} />
+        <ellipse cx={w / 2} cy={h / 2} rx={Math.max(0, w / 2 - 1)} ry={Math.max(0, h / 2 - 1)} style:fill />
       {:else if shape === 'diamond'}
-        <polygon points="{w / 2},1 {w - 1},{h / 2} {w / 2},{h - 1} 1,{h / 2}" />
+        <polygon points="{w / 2},1 {w - 1},{h / 2} {w / 2},{h - 1} 1,{h / 2}" style:fill />
       {:else if shape === 'triangle'}
-        <polygon points="{w / 2},1 {w - 1},{h - 1} 1,{h - 1}" />
+        <polygon points="{w / 2},1 {w - 1},{h - 1} 1,{h - 1}" style:fill />
       {:else if shape === 'hexagon'}
         <polygon
           points="{w * 0.25},1 {w * 0.75},1 {w - 1},{h / 2} {w * 0.75},{h - 1} {w * 0.25},{h - 1} 1,{h / 2}"
+          style:fill
         />
       {/if}
     </svg>
@@ -180,7 +183,7 @@
   .shape rect,
   .shape polygon,
   .shape ellipse {
-    fill: var(--panel-2);
+    fill: var(--node-fill, var(--panel-2));
     stroke: var(--line-strong);
     stroke-width: 2;
   }

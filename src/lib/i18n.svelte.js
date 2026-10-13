@@ -109,9 +109,14 @@ export const DICT = {
   },
   selectAll: { ru: 'Выделить всё', en: 'Select all' },
   shortcutsHint: {
-    ru: 'Ctrl+Z / Ctrl+Shift+Z — отмена и возврат · Ctrl+A — выделить всё · Ctrl+D — дублировать · Delete — удалить · стрелки — сдвиг · Esc — снять выделение · Ctrl+S — сохранить',
-    en: 'Ctrl+Z / Ctrl+Shift+Z — undo and redo · Ctrl+A — select all · Ctrl+D — duplicate · Delete — remove · arrows — nudge · Esc — deselect · Ctrl+S — save'
+    ru: 'Ctrl+Z / Ctrl+Shift+Z — отмена и возврат · Ctrl+C/V — копировать/вставить · Ctrl+X — вырезать · Ctrl+A — выделить всё · Ctrl+D — дублировать · Delete — удалить · стрелки — сдвиг · Esc — снять выделение · Ctrl+S — сохранить',
+    en: 'Ctrl+Z / Ctrl+Shift+Z — undo and redo · Ctrl+C/V — copy/paste · Ctrl+X — cut · Ctrl+A — select all · Ctrl+D — duplicate · Delete — remove · arrows — nudge · Esc — deselect · Ctrl+S — save'
   },
+  sendBack: { ru: 'Ниже', en: 'Backward' },
+  bringFront: { ru: 'Выше', en: 'Forward' },
+  updateAvailable: { ru: 'доступно обновление', en: 'update available' },
+  reloadEditor: { ru: 'Перезагрузить редактор', en: 'Reload editor' },
+  update: { ru: 'Обновить', en: 'Update' },
   duplicate: { ru: 'Дублировать', en: 'Duplicate' },
   // Названия фигур (для подсказок палитры).
   square: { ru: 'квадрат', en: 'square' },

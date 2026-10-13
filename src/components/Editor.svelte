@@ -28,6 +28,7 @@
   let schemaPathParam = '';
   // Режим без сервера: file:// с данными в hash (см. app/shortcut.html).
   let offline = $state(false);
+  let clipboard = null;
 
   const fileName = () => `${(board.name || 'schema').replace(/[\\/:*?"<>|]/g, '-').replace(/\.json$/i, '')}.json`;
   const isPickerCancel = (error) => error?.name === 'AbortError';
@@ -327,6 +328,17 @@
     board.duplicateNodes([...board.selectedNodes]);
   };
 
+  const copySelection = () => {
+    const copied = board.copySelection();
+    if (copied.nodes.length || copied.edges.length) clipboard = copied;
+  };
+
+  const cutSelection = () => {
+    if (!board.selectedNodes.length && !board.selectedEdges.length) return;
+    copySelection();
+    deleteSelection();
+  };
+
   // Горячие клавиши: undo/redo, save, выделение, дублирование, удаление, сдвиг.
   const onKey = (event) => {
     if (isTyping(event.target)) return;
@@ -348,6 +360,21 @@
     if (mod && key === 's') {
       event.preventDefault();
       saveFile();
+      return;
+    }
+    if (mod && key === 'c') {
+      event.preventDefault();
+      copySelection();
+      return;
+    }
+    if (mod && key === 'v' && clipboard) {
+      event.preventDefault();
+      board.pasteSelection(clipboard);
+      return;
+    }
+    if (mod && key === 'x') {
+      event.preventDefault();
+      cutSelection();
       return;
     }
     if (mod && key === 'a') {

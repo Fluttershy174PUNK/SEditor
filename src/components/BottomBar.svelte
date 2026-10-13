@@ -1,5 +1,7 @@
 <script>
   // Нижняя строка: координаты, количество элементов, выделение, тосты, статус.
+  import { onMount } from 'svelte';
+  import { version as VERSION } from '../../app/version.json';
   import { board } from '../lib/board.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
   import { useSvelteFlow } from '@xyflow/svelte';
@@ -7,6 +9,26 @@
   const flow = useSvelteFlow();
 
   const cursor = $state({ x: 0, y: 0 });
+  let latest = $state('');
+  const isNewer = (candidate) => {
+    const currentParts = VERSION.split('.').map(Number);
+    const candidateParts = candidate.split('.').map(Number);
+    for (let i = 0; i < Math.max(currentParts.length, candidateParts.length); i += 1) {
+      const diff = (candidateParts[i] || 0) - (currentParts[i] || 0);
+      if (diff) return diff > 0;
+    }
+    return false;
+  };
+
+  onMount(async () => {
+    try {
+      const response = await fetch('https://api.github.com/repos/Fluttershy174PUNK/SEditor/releases/latest');
+      if (response.ok) {
+        const tag = (await response.json()).tag_name.replace(/^v/, '');
+        if (/^\d+(\.\d+){1,2}$/.test(tag) && isNewer(tag)) latest = tag;
+      }
+    } catch {}
+  });
 
   // Тост гаснет сам, чтобы не висел вечно.
   $effect(() => {
@@ -42,6 +64,13 @@
   {#if board.busy}<span class="cell busy" role="status">...</span>{/if}
   {#if board.toast}
     <span class="toast" class:error={board.toast.kind === 'error'} class:animated={board.animate} role="status">{board.toast.message}</span>
+  {/if}
+  <a class="utility" href="https://github.com/Fluttershy174PUNK/SEditor" target="_blank" rel="noreferrer" aria-label="GitHub SEditor">GitHub</a>
+  {#if latest}
+    <span class="utility update">SEditor v{latest} — {t('updateAvailable')}</span>
+    <a class="utility" href="https://github.com/Fluttershy174PUNK/SEditor/releases/latest" target="_blank" rel="noreferrer">{t('update')}</a>
+  {:else}
+    <span class="utility">v{VERSION}</span>
   {/if}
 </footer>
 
@@ -86,6 +115,18 @@
 
   .toast.error {
     color: var(--err);
+  }
+
+  .utility {
+    flex: 0 0 auto;
+    padding: 0 5px;
+    color: var(--ink-dim);
+    font: inherit;
+    text-decoration: none;
+  }
+
+  .update {
+    color: var(--warn);
   }
 
   /* Мигающий курсор после сообщения — привет из 8-бит. */

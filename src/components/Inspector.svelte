@@ -15,6 +15,12 @@
   const node = $derived(board.selectedNode);
   const edge = $derived(board.selectedEdge);
   const data = $derived(node?.data || {});
+  let labelInput = $state(null);
+  $effect(() => {
+    if (!labelInput || !data.label) return;
+    labelInput.style.height = 'auto';
+    labelInput.style.height = `${labelInput.scrollHeight}px`;
+  });
   const shape = $derived(data.shape);
   const spec = $derived(SHAPES[shape] || SHAPES.rect);
   const isZone = $derived(shape === 'zone');
@@ -98,7 +104,7 @@
       </div>
 
       <label for="node-label">{divider ? t('dividerName') : t('label')}</label>
-      <input id="node-label" value={data.label || ''} placeholder={divider ? t('dividerNameHint') : ''} oninput={(e) => setData({ label: e.target.value })} />
+      <textarea bind:this={labelInput} id="node-label" class="label-input" rows="1" value={data.label || ''} placeholder={divider ? t('dividerNameHint') : ''} oninput={(e) => setData({ label: e.target.value })}></textarea>
 
       {#if divider}
         <!-- Подпись именует пространство: уровень — сверху/снизу, стадия — справа/слева. -->
@@ -323,6 +329,10 @@
   textarea {
     resize: vertical;
     width: 100%;
+  }
+
+  .label-input {
+    min-height: 32px;
   }
 
   input[type='color'] {

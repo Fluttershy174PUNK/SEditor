@@ -1,5 +1,5 @@
 // Единое состояние редактора. Модульный синглтон: Board и Inspector читают/пишут его напрямую.
-import { clampSize, isDivider, OPPOSITE, SIDES, SHAPES, snapAxis } from './config.js';
+import { clampSize, isDivider, OPPOSITE, PALETTE, SIDES, SHAPES, snapAxis } from './config.js';
 import { computeMembership, nodeRect, nodesBounds } from './geometry.js';
 import { clone, History } from './history.svelte.js';
 import { deserialize, edgeId, makeNode, serialize } from './schema.js';
@@ -116,6 +116,8 @@ export class Board {
     if (!snap) return;
     this.nodes = clone(snap.nodes);
     this.edges = clone(snap.edges);
+    this.selectedNodes = this.nodes.filter((n) => n.selected).map((n) => n.id);
+    this.selectedEdges = this.edges.filter((e) => e.selected).map((e) => e.id);
     this.syncExtent();
     this.dirty = true;
   }
@@ -186,6 +188,9 @@ export class Board {
     if (!SHAPES[shape]) return null;
     this.mark();
     const node = makeNode(shape, position);
+    if (PALETTE.shapes.includes(shape)) {
+      node.zIndex = Math.max(0, ...this.nodes.filter((n) => PALETTE.shapes.includes(n.data?.shape)).map((n) => n.zIndex ?? 0)) + 1;
+    }
     this.nodes = [...this.nodes, node];
     this.selectNodes([node.id]);
     this.syncExtent();
@@ -216,6 +221,77 @@ export class Board {
     this.dirty = true;
   }
 
+  /** Копировать выделенные узлы и внутренние/выделенные связи. */
+  copySelection() {
+    const ids = new Set(this.selectedNodes);
+    return {
+      nodes: this.nodes.filter((n) => ids.has(n.id)).map((n) => clone(n)),
+      edges: this.edges.filter((e) => ids.has(e.id) || (ids.has(e.source) && ids.has(e.target))).map((e) => clone(e))
+    };
+  }
+
+  pasteSelection(data) {
+    if (!data?.nodes?.length && !data?.edges?.length) return;
+    this.mark();
+    const occupied = new Set(this.nodes.map((n) => n.id));
+    const idMap = new Map();
+    const copies = data.nodes.map((source) => {
+      const copy = this.copyOf(source, occupied);
+      occupied.add(copy.id);
+      idMap.set(source.id, copy.id);
+      return copy;
+    });
+    let z = Math.max(0, ...this.nodes.filter((n) => PALETTE.shapes.includes(n.data?.shape)).map((n) => n.zIndex ?? 0));
+    for (const copy of copies) if (PALETTE.shapes.includes(copy.data?.shape)) copy.zIndex = ++z;
+    const nodeIds = new Set([...this.nodes.map((n) => n.id), ...copies.map((n) => n.id)]);
+    const edges = data.edges.filter((e) => nodeIds.has(idMap.get(e.source) || e.source) && nodeIds.has(idMap.get(e.target) || e.target)).map((edge) => {
+      const copy = { ...clone(edge), id: edgeId(), source: idMap.get(edge.source) || edge.source, target: idMap.get(edge.target) || edge.target, selected: false };
+      const sourceCopy = idMap.has(edge.source);
+      const targetCopy = idMap.has(edge.target);
+      if (sourceCopy !== targetCopy) {
+        const movedEnd = sourceCopy ? 'source' : 'target';
+        const original = this.nodes.find((n) => n.id === edge[movedEnd]);
+        const duplicate = copies.find((n) => n.id === idMap.get(edge[movedEnd]));
+        if (original && duplicate) {
+          duplicate.position = { ...duplicate.position, x: duplicate.position.x + original.width - duplicate.width, y: duplicate.position.y + original.height - duplicate.height };
+        }
+      }
+      return copy;
+    });
+    this.nodes = [...this.nodes, ...copies];
+    this.edges = [...this.edges, ...edges];
+    this.selectNodes(copies.map((n) => n.id), edges.map((e) => e.id));
+    this.syncExtent();
+  }
+
+  /** Сдвинуть только выбранные обычные фигуры на один визуальный слой. */
+  moveSelectedShapes(direction) {
+    const shapes = this.nodes.filter((n) => PALETTE.shapes.includes(n.data?.shape));
+    const selected = new Set(this.selectedNodes);
+    const ordered = [...shapes].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0) || this.nodes.indexOf(a) - this.nodes.indexOf(b));
+    let moved = false;
+    if (direction < 0) {
+      for (let i = 1; i < ordered.length; i += 1) {
+        if (selected.has(ordered[i].id) && !selected.has(ordered[i - 1].id)) {
+          [ordered[i - 1], ordered[i]] = [ordered[i], ordered[i - 1]];
+          moved = true;
+        }
+      }
+    } else {
+      for (let i = ordered.length - 2; i >= 0; i -= 1) {
+        if (selected.has(ordered[i].id) && !selected.has(ordered[i + 1].id)) {
+          [ordered[i], ordered[i + 1]] = [ordered[i + 1], ordered[i]];
+          moved = true;
+        }
+      }
+    }
+    if (!moved) return;
+    this.mark();
+    const ranks = new Map(ordered.map((n, i) => [n.id, i + 1]));
+    this.nodes = this.nodes.map((n) => ranks.has(n.id) ? { ...n, zIndex: ranks.get(n.id) } : n);
+    this.dirty = true;
+  }
+
   /** Копия узла со смещением — правый клик → «Дублировать». */
   duplicateNode(id) {
     const node = this.nodes.find((n) => n.id === id);
@@ -243,6 +319,7 @@ export class Board {
       ...clone(node),
       id,
       position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+      ...(PALETTE.shapes.includes(node.data?.shape) ? { zIndex: Math.max(0, ...this.nodes.filter((n) => PALETTE.shapes.includes(n.data?.shape)).map((n) => n.zIndex ?? 0)) + 1 } : {}),
       selected: false
     };
   }
@@ -258,6 +335,11 @@ export class Board {
       occupied.add(copy.id);
       return copy;
     });
+    let z = Math.max(0, ...this.nodes.filter((n) => PALETTE.shapes.includes(n.data?.shape)).map((n) => n.zIndex ?? 0));
+    for (const copy of copies) {
+      if (PALETTE.shapes.includes(copy.data?.shape)) copy.zIndex = ++z;
+      else copy.zIndex = undefined;
+    }
     this.nodes = [...this.nodes, ...copies];
     this.selectNodes(copies.map((c) => c.id));
     this.syncExtent();
