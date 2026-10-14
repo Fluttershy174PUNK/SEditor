@@ -3,8 +3,7 @@ node_modules/
 # Generated example output when the skill is invoked at repository root.
 /.SEditor/
 
-# Local build artifacts; app/editor.html remains tracked.
-# Собранная страница — артефакт, но в репозиторий её кладём: app/editor.html в git.
+# The tracked root SEditor.html and app/editor.html are release artifacts.
 .build/
 dev-dist/
 .vite/

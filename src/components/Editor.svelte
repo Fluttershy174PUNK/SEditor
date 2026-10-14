@@ -12,22 +12,17 @@
   import { board } from '../lib/board.svelte.js';
   import { SHAPES, isDivider } from '../lib/config.js';
   import { exportPng } from '../lib/exportPng.js';
-  import { buildLauncher, editorUrlFromSchemaDir } from '../lib/launcher.js';
-  import { downloadBlob, resolveOutputDir, writeFileToDir } from '../lib/fsHandles.js';
-  import * as api from '../lib/api.js';
+  import { buildStandaloneEditor } from '../lib/launcher.js';
+  import { downloadBlob, ensureAccess, listRecentHandles, recentHandlePickerAvailable, rememberFileHandle } from '../lib/fsHandles.js';
+  import { handleClipboardShortcut, shouldIgnoreEditorShortcut, shortcutKey } from '../lib/editorShortcuts.js';
   import { t } from '../lib/i18n.svelte.js';
 
   let pngOpen = $state(false);
   let pngName = $state('');
-  let pngFolder = $state('exports');
   let pngSize = $state('');
   let fileInput;
   let localFileHandle = null;
   let downloadHinted = false;
-  // Путь схемы из ярлыка (hash ?p=) — цель для PNG/ярлыка, когда сервера нет.
-  let schemaPathParam = '';
-  // Режим без сервера: file:// с данными в hash (см. app/shortcut.html).
-  let offline = $state(false);
   let clipboard = null;
 
   const fileName = () => `${(board.name || 'schema').replace(/[\\/:*?"<>|]/g, '-').replace(/\.json$/i, '')}.json`;
@@ -40,30 +35,51 @@
     const params = new URLSearchParams(raw);
     const data = params.get('d');
     if (!data) return null;
-    return { text: data, path: params.get('p') || '' };
+    return { text: data };
   };
 
-  onMount(() => {
+  let { initialSchema = null } = $props();
+
+  const onHashChange = () => {
+    const embedded = readHashSchema();
+    if (!embedded) return;
+    try {
+      board.loadSchema(JSON.parse(embedded.text));
+      history.replaceState(null, '', location.pathname + location.search);
+    } catch (err) {
+      board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
+  };
+
+  onMount(async () => {
+    window.addEventListener('hashchange', onHashChange);
+    if (initialSchema) {
+      board.loadSchema(initialSchema);
+      return () => window.removeEventListener('hashchange', onHashChange);
+    }
+    const standaloneData = document.getElementById('seditor-schema')?.textContent;
+    if (standaloneData) {
+      try {
+        board.loadSchema(JSON.parse(standaloneData));
+      } catch (err) {
+        board.notify(`${t('error')}: ${err.message}`, 'error');
+      }
+      return () => window.removeEventListener('hashchange', onHashChange);
+    }
     const fromHash = readHashSchema();
-    const path = new URLSearchParams(location.search).get('path');
     if (fromHash) {
-      // Ярлык: схема уже внутри, сервер не нужен.
-      offline = true;
-      schemaPathParam = fromHash.path;
+      // Legacy schema launchers pass their JSON in the URL hash.
       try {
         board.loadSchema(JSON.parse(fromHash.text));
-        board.path = fromHash.path || '';
       } catch (err) {
         board.notify(`${t('error')}: ${err.message}`, 'error');
       }
       // Данные в адресе не оставляем: перезагрузка страницы их не подхватит.
       history.replaceState(null, '', location.pathname + location.search);
-    } else if (path) {
-      board.openPath(path);
-    } else if (location.protocol === 'file:') {
-      offline = true;
-      board.notify(t('offlineHint'), 'error');
+    } else {
+      board.recent = await listRecentHandles();
     }
+    return () => window.removeEventListener('hashchange', onHashChange);
   });
 
   const loadLocalFile = async (file, handle = null) => {
@@ -73,20 +89,20 @@
       if (!board.name) board.name = file.name.replace(/\.json$/i, '');
       board.path = file.name;
       localFileHandle = handle;
+      if (handle && recentHandlePickerAvailable) board.recent = await rememberFileHandle(handle);
       board.notify(`${t('loaded')}: ${file.name}`);
     } catch (err) {
       board.notify(`${t('error')}: ${err.message}`, 'error');
     }
   };
 
-  const openRecentFile = async (path) => {
+  const openRecentFile = async (recent) => {
     try {
-      const { data } = await api.readSchema(path);
-      board.loadSchema(data);
-      localFileHandle = null;
-      board.notify(`${t('loaded')}: ${path}`);
+      if (!recent.handle) throw new Error(t('recentUnavailable'));
+      if (!(await ensureAccess(recent.handle, 'read'))) throw new Error(t('filePermissionDenied'));
+      await loadLocalFile(await recent.handle.getFile(), recent.handle);
     } catch (err) {
-      board.notify(`${t('error')}: ${err.message}`, 'error');
+      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
     }
   };
 
@@ -96,7 +112,7 @@
         const [handle] = await window.showOpenFilePicker({
           types: [{ description: 'SEditor schema', accept: { 'application/json': ['.json'] } }]
         });
-        await loadLocalFile(await handle.getFile(), handle);
+        await loadLocalFile(await handle.getFile(), recentHandlePickerAvailable ? handle : null);
       } catch (err) {
         if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
       }
@@ -111,20 +127,19 @@
     payload.meta.name = board.name || name.replace(/\.json$/i, '');
     const contents = JSON.stringify(payload, null, 2);
     if (handle) {
-      if (handle.requestPermission && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
-        throw new Error(t('filePermissionDenied'));
-      }
+      if (!(await ensureAccess(handle))) throw new Error(t('filePermissionDenied'));
       const writable = await handle.createWritable();
-      await writable.write(contents);
-      await writable.close();
+      try {
+        await writable.write(contents);
+        await writable.close();
+      } catch (error) {
+        await writable.abort().catch(() => null);
+        throw error;
+      }
       localFileHandle = handle;
+      if (recentHandlePickerAvailable) board.recent = await rememberFileHandle(handle);
     } else {
-      const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(new Blob([contents], { type: 'application/json' }), name);
     }
     board.path = handle?.name || name;
     board.dirty = false;
@@ -145,7 +160,7 @@
     } else {
       try {
         await writeLocalFile(null);
-        // Firefox/Safari не умеют showSaveFilePicker — напоминаем один раз за сессию.
+        // Older browsers fall back to the standard download flow.
         if (!downloadHinted) {
           downloadHinted = true;
           board.notify(t('saveAsBrowserHint'), 'error');
@@ -156,48 +171,36 @@
     }
   };
 
-  /** Сохранить JSON схемы без сервера: папку выбирают один раз, handle живёт в IndexedDB. */
-  const saveOffline = async () => {
-    const name = fileName();
-    const payload = board.payload();
-    payload.meta.name = board.name || name.replace(/\.json$/i, '');
-    const contents = JSON.stringify(payload, null, 2);
-    const dir = await resolveOutputDir({ prompt: true });
-    if (await writeFileToDir(dir, name, contents)) {
-      board.path = name;
-      board.dirty = false;
-      board.notify(`${t('saved')}: ${name}`);
-      // Ярлык рядом со схемой держим актуальным.
-      if (schemaPathParam) await writeShortcutOffline();
-      return true;
-    }
-    await writeLocalFile(null);
-    return true;
-  };
-
   const saveFile = async () => {
-    if (offline) {
+    if (localFileHandle) {
       try {
-        return await saveOffline();
+        await writeLocalFile(localFileHandle);
+        return;
       } catch (err) {
-        if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
-        return false;
+        if (isPickerCancel(err)) return;
+        board.notify(`${t('error')}: ${err.message}`, 'error');
       }
     }
-    if (!localFileHandle) return saveAsFiles();
-    try {
-      await writeLocalFile(localFileHandle);
-      // Ярлык всегда соответствует последней сохранённой схеме.
-      await api.createShortcut(board.path).catch(() => null);
-    } catch (err) {
-      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
-    }
+    await saveAsFiles();
   };
 
-  const onFallbackFile = (event) => {
+  const onFallbackFile = async (event) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
-    if (file) loadLocalFile(file);
+    if (file) await loadLocalFile(file);
+  };
+
+  const exportLauncher = async () => {
+    try {
+      const schema = board.payload();
+      schema.meta.name = board.name || schema.meta.name || 'schema';
+      const source = window.__SEDITOR_TEMPLATE_HTML__;
+      if (!source) throw new Error('Standalone template unavailable');
+      const html = buildStandaloneEditor(source, schema);
+      downloadBlob(new Blob([html], { type: 'text/html' }), `${fileName().replace(/\.json$/i, '')}.html`);
+    } catch (err) {
+      board.notify(`${t('error')}: ${err.message}`, 'error');
+    }
   };
 
   const stamp = () => {
@@ -208,85 +211,25 @@
 
   const openPng = () => {
     pngName = `${board.name || 'schema'}-${stamp()}`;
-    pngFolder = 'exports';
     pngSize = '';
     pngOpen = true;
   };
 
-  /** Перегенерировать ярлык без сервера: файл ложится рядом со схемой. */
-  const writeShortcutOffline = async () => {
-    const schemaPath = schemaPathParam;
-    if (!schemaPath) throw new Error(t('shortcutNoDir'));
-    const name = board.name || schemaPath.replace(/^.*\//, '').replace(/\.json$/i, '');
-    const schema = board.payload();
-    schema.meta.name = name;
-    const html = buildLauncher({
-      schema,
-      name,
-      schemaPathFromAppDir: schemaPath,
-      editorUrl: editorUrlFromSchemaDir(schemaPath)
-    });
-    const dir = await resolveOutputDir({ prompt: true });
-    if (await writeFileToDir(dir, `${name}.html`, html)) return `${name}.html`;
-    downloadBlob(new Blob([html], { type: 'text/html' }), `${name}.html`);
-    throw new Error(t('offlineSaveHint'));
-  };
+  /** Export a portable one-file copy of the editor with this schema embedded. */
 
-  const openShortcut = async () => {
-    if (!board.path && !schemaPathParam) {
-      board.notify(t('shortcutNoDir'), 'error');
-      return;
-    }
-    if (board.dirty) {
-      const saved = await board.save();
-      if (!saved || board.dirty) return;
-    }
-    try {
-      if (offline) {
-        const written = await writeShortcutOffline();
-        board.notify(`${t('shortcutWritten')}: ${written}`);
-        return;
-      }
-      const result = await api.createShortcut(board.path);
-      if (!result.saved) throw new Error('Backend не подтвердил создание ярлыка.');
-      board.notify(`${t('shortcutWritten')}: ${result.path}`);
-    } catch (err) {
-      if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
-    }
-  };
 
   const savePng = async () => {
     try {
       const { dataUrl, width, height } = exportPng({ nodes: board.nodes, edges: board.edges, title: board.name });
       pngSize = `${width}×${height}`;
       const filename = `${(pngName || 'schema').replace(/\.png$/i, '')}.png`;
-      if (offline) {
-        // Рядом со схемой: папку выбирают один раз, handle живёт в IndexedDB.
-        const dir = await resolveOutputDir({ prompt: true });
-        const blob = await (await fetch(dataUrl)).blob();
-        if (await writeFileToDir(dir, filename, blob)) {
-          board.notify(`${t('saved')}: ${filename}`);
-          pngOpen = false;
-          return;
-        }
-        downloadBlob(blob, filename);
-        board.notify(`${t('offlineSaveHint')} (${filename})`, 'error');
-        pngOpen = false;
-        return;
-      }
-      const folder = (pngFolder || '').replace(/^\/+|\/+$/g, '');
-      const path = `${folder ? `${folder}/` : ''}${filename}`;
-      const result = await api.writePng(path, dataUrl);
-      board.notify(`${t('saved')}: ${result.path}`);
+      const blob = await (await fetch(dataUrl)).blob();
+      downloadBlob(blob, filename);
+
       pngOpen = false;
     } catch (err) {
       if (!isPickerCancel(err)) board.notify(`${t('error')}: ${err.message}`, 'error');
     }
-  };
-
-  const isTyping = (target) => {
-    const tag = target?.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
   };
 
   /** Выделить всё на поле. */
@@ -328,68 +271,43 @@
     board.duplicateNodes([...board.selectedNodes]);
   };
 
-  const copySelection = () => {
-    const copied = board.copySelection();
-    if (copied.nodes.length || copied.edges.length) clipboard = copied;
-  };
-
-  const cutSelection = () => {
-    if (!board.selectedNodes.length && !board.selectedEdges.length) return;
-    copySelection();
-    deleteSelection();
+  const consumeShortcut = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   // Горячие клавиши: undo/redo, save, выделение, дублирование, удаление, сдвиг.
   const onKey = (event) => {
-    if (isTyping(event.target)) return;
+    if (shouldIgnoreEditorShortcut(event)) return;
     if (pngOpen) return;
-    const mod = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
+    if (handleClipboardShortcut(event, board, { get value() { return clipboard; }, set value(value) { clipboard = value; } })) return;
 
-    if (mod && key === 'z') {
-      event.preventDefault();
-      if (event.shiftKey) board.redo();
-      else board.undo();
-      return;
-    }
+    const mod = event.ctrlKey || event.metaKey;
+    const key = shortcutKey(event);
+
     if (mod && key === 'y') {
-      event.preventDefault();
+      consumeShortcut(event);
       board.redo();
       return;
     }
     if (mod && key === 's') {
-      event.preventDefault();
+      consumeShortcut(event);
       saveFile();
       return;
     }
-    if (mod && key === 'c') {
-      event.preventDefault();
-      copySelection();
-      return;
-    }
-    if (mod && key === 'v' && clipboard) {
-      event.preventDefault();
-      board.pasteSelection(clipboard);
-      return;
-    }
-    if (mod && key === 'x') {
-      event.preventDefault();
-      cutSelection();
-      return;
-    }
     if (mod && key === 'a') {
-      event.preventDefault();
+      consumeShortcut(event);
       selectAll();
       return;
     }
     if (mod && key === 'd') {
-      event.preventDefault();
+      consumeShortcut(event);
       duplicateSelection();
       return;
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
       if (!board.selectedNodes.length && !board.selectedEdges.length) return;
-      event.preventDefault();
+      consumeShortcut(event);
       deleteSelection();
       return;
     }
@@ -403,10 +321,18 @@
     const moves = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] };
     if (moves[event.key]) {
       if (!board.selectedNodes.length) return;
-      event.preventDefault();
+      consumeShortcut(event);
       nudge(...moves[event.key]);
     }
   };
+
+  onMount(() => {
+    const onKeyCapture = (event) => {
+      if (!event.defaultPrevented) onKey(event);
+    };
+    window.addEventListener('keydown', onKeyCapture, true);
+    return () => window.removeEventListener('keydown', onKeyCapture, true);
+  });
 
   const onBeforeUnload = (event) => {
     if (!board.dirty) return;
@@ -414,12 +340,13 @@
     event.returnValue = '';
   };
 
+
 </script>
 
-<svelte:window onkeydown={onKey} onbeforeunload={onBeforeUnload} />
+<svelte:window onbeforeunload={onBeforeUnload} />
 
 <SvelteFlowProvider>
-  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onsaveto={saveAsFiles} onpng={openPng} onshortcut={openShortcut} />
+  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onpng={openPng} onshortcut={exportLauncher} />
   <FlowCanvas />
   <!-- Правая колонка: палитра сверху, свойства под ней. -->
   <aside class="sidebar">
@@ -437,10 +364,7 @@
       <label for="png-name">{t('fileName')}</label>
       <input id="png-name" bind:value={pngName} />
     </div>
-    <div>
-      <label for="png-folder">{t('pngFolder')}</label>
-      <input id="png-folder" bind:value={pngFolder} />
-    </div>
+
     {#if pngSize}<p class="size">{pngSize}</p>{/if}
     {#snippet footer()}
       <button onclick={() => (pngOpen = false)}>{t('cancel')}</button>

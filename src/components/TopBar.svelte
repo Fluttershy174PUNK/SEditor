@@ -1,5 +1,5 @@
 <script>
-  // Верхний бар: имя схемы, последние схемы, путь, файл-операции, undo/redo, сетка, PNG, язык.
+  // Top bar: schema name, browser recents, file actions, history, grid, PNG, language.
   import { useSvelteFlow } from '@xyflow/svelte';
   import { board } from '../lib/board.svelte.js';
   import { i18n, t } from '../lib/i18n.svelte.js';
@@ -7,7 +7,7 @@
 
   const flow = useSvelteFlow();
 
-  let { onopen = () => {}, onopenrecent = () => {}, onsave = () => {}, onsaveto = () => {}, onpng = () => {}, onshortcut = () => {} } = $props();
+  let { onopen = () => {}, onopenrecent = () => {}, onsave = () => {}, onpng = () => {}, onshortcut = () => {} } = $props();
 
   let editingName = $state(false);
   let nameInput = $state('');
@@ -26,14 +26,13 @@
     }
   };
 
-  const openRecent = async () => {
+  const openRecent = () => {
     showRecent = !showRecent;
-    if (showRecent) await board.refreshRecent();
   };
 
   const pickRecent = (item) => {
     showRecent = false;
-    onopenrecent(item.path);
+    onopenrecent(item);
   };
 
   // Выпадающий список закрывается по клику мимо и по Escape.
@@ -76,12 +75,14 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <ul class="dropdown" role="menu">
         {#if board.recent.length}
-          {#each board.recent as item (item.path)}
+          {#each board.recent as item (item.id || item.path)}
             <li>
-              <button role="menuitem" onclick={() => pickRecent(item)}>
-                <span class="nm">{item.name}</span>
-                <span class="pth">{item.path}</span>
-              </button>
+              <span class="recent-item">
+                <button role="menuitem" onclick={() => pickRecent(item)}>
+                  <span class="nm">{item.name}</span>
+                  <span class="pth">{item.path || t('browserFile')}</span>
+                </button>
+              </span>
             </li>
           {/each}
         {:else}
@@ -91,9 +92,7 @@
     {/if}
   </div>
 
-  <div class="path" title={board.path || t('noPath')}>
-    {board.path || t('noPath')}
-  </div>
+  {#if board.path}<div class="path" title={board.path}>{board.path}</div>{/if}
 
   <div class="group">
     <button onclick={onopen} title={t('open')} aria-label={t('open')}>
@@ -102,14 +101,9 @@
     <button onclick={onsave} title={t('save')} aria-label={t('save')}>
       <PixelIcon name="save" size={14} /><span>{t('save')}</span>
     </button>
-    <button onclick={onsaveto} title={t('saveAs')} aria-label={t('saveAs')}>
-      <PixelIcon name="saveAs" size={14} /><span>{t('saveAs')}</span>
+    <button onclick={onshortcut} title={t('createLauncher')} aria-label={t('createLauncher')}>
+      <PixelIcon name="html" size={14} /><span>HTML</span>
     </button>
-    {#if board.path}
-      <button onclick={onshortcut} title="Создать HTML-ярлык" aria-label="Создать HTML-ярлык">
-        HTML
-      </button>
-    {/if}
   </div>
 
   <div class="group">
@@ -232,8 +226,7 @@
     z-index: 40;
   }
 
-  .dropdown :global(button) {
-    width: 100%;
+  .recent-item :global(button[role='menuitem']) {
     box-shadow: none;
     justify-content: flex-start;
     flex-direction: column;
@@ -256,6 +249,11 @@
   .empty {
     padding: 4px;
     color: var(--ink-dim);
+  }
+
+  .recent-item {
+    display: flex;
+    align-items: center;
   }
 
   .path {

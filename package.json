@@ -1,13 +1,15 @@
 {
   "name": "seditor",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node scripts/update-version.mjs",
+    "build:bundle": "vite build",
     "dev": "vite --config dev.config.js",
     "start": "node app/server.js",
-    "test": "node src/lib/geometry.test.js && node src/lib/schema.test.js && node app/editor.test.mjs && node app/version.test.mjs"
+    "verify:standalone": "node app/standalone.test.mjs",
+    "test": "node src/lib/geometry.test.js && node src/lib/schema.test.js && node src/lib/fsHandles.test.js && node app/editor.test.mjs && node app/standalone.test.mjs && node app/version.test.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

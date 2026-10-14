@@ -21,6 +21,7 @@
   };
 
   onMount(async () => {
+    if (window.__SEDITOR_INITIAL_SCHEMA__) return;
     try {
       const response = await fetch('https://api.github.com/repos/Fluttershy174PUNK/SEditor/releases/latest');
       if (response.ok) {

@@ -1,36 +1,25 @@
 # SEditor
 
-A lightweight, single-file editor for flowcharts, architecture maps, and project diagrams. Open `app/editor.html` directly in a browser—no install or server required.
+A lightweight, portable HTML editor for flowcharts, architecture maps, and project diagrams. Open `SEditor.html` directly in a browser—no installation or server required.
 
 [Русская версия README](README.ru.md) · [Schema format](docs/schema-format.md) · [SEskill](https://github.com/Fluttershy174PUNK/SEskill)
 
-## Open a diagram
+## Open and share a diagram
 
-Open a paired `.html` launcher beside a schema. The launcher embeds the JSON so it works with `file://` and does not require a server. Regenerate it after editing the JSON:
-
-```bash
-cd app
-node create-shortcut.mjs ../example_scheme/example-flow.json
-```
+Open JSON with the editor's **Open** button, or drop a JSON file onto the page. The **HTML** button downloads a portable, self-contained editor copy with the current diagram embedded. Move or share that file; it opens without a server.
 
 ## Features
 
 - Shapes, labels, tables, zones, levels, and stages
 - Connectors with editable labels, routing, and arrow styles
-- Multi-select, copy/paste/cut, undo/redo, and shape layer ordering
+- Multi-select; `Ctrl/Cmd+C/V/X/Z` to copy, paste, cut, and undo one or multiple selected nodes
 - 16 muted fill colors; editable labels and descriptions
 - JSON and PNG export, grid/snap, pan and zoom
 - Russian and English interface
 
-## Optional local server
+## Files and privacy
 
-The dependency-free Node.js backend adds recent files, direct disk writes, and in-editor launcher creation:
-
-```bash
-node app/server.js  # http://127.0.0.1:5174/editor.html
-```
-
-Keep the default `HOST=127.0.0.1`: the file API can access arbitrary local paths. Without the backend, the editor can still save to a user-selected folder in supported browsers.
+Open JSON with the browser picker. In supported Chromium browsers, the editor can save directly to a chosen file and offer recents when the browser permits storing file handles. File permissions are controlled by the browser. Other browsers use downloads. File access and recents may be limited in standalone exported HTML or some browsers. No server is required for normal use.
 
 ## Schema compatibility
 
@@ -38,15 +27,15 @@ Schema v1 remains current. Older unversioned and v1 diagrams open; unsupported f
 
 ## Development
 
-Requires Node.js 18+.
+Node.js 18+ is required only for building and tests; users need a browser.
 
 ```bash
 npm ci
-npm test
 npm run build
+npm test
 ```
 
-Edit `src/`; `npm run build` creates the self-contained `app/editor.html`. `app/version.json` records the runtime version and checksums.
+Edit `src/`; the build generates root `SEditor.html` and its byte-identical `app/editor.html` compatibility copy. `app/version.json` records the managed runtime checksums.
 
 ## License
 

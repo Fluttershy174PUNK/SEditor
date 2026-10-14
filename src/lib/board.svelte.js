@@ -3,8 +3,6 @@ import { clampSize, isDivider, OPPOSITE, PALETTE, SIDES, SHAPES, snapAxis } from
 import { computeMembership, nodeRect, nodesBounds } from './geometry.js';
 import { clone, History } from './history.svelte.js';
 import { deserialize, edgeId, makeNode, serialize } from './schema.js';
-import * as api from './api.js';
-import { t } from './i18n.svelte.js';
 
 const persisted = (key, fallback) => {
   try {
@@ -39,7 +37,6 @@ export class Board {
   animate = $state(persisted('seditor.animate', defaultAnimate()));
   toast = $state(null);
   busy = $state(false);
-  // Последние схемы с диска.
   recent = $state([]);
   // Границы панорамирования: считаются по содержимому (syncExtent).
   translateExtent = $state([
@@ -477,57 +474,8 @@ export class Board {
     return serialize({ name: this.name, nodes: this.nodes, edges: this.edges, viewport: this.viewport });
   }
 
-  async refreshRecent() {
-    try {
-      const { items } = await api.listSchemas();
-      this.recent = items;
-    } catch {
-      this.recent = [];
-    }
-  }
-
-  async openPath(path) {
-    this.busy = true;
-    try {
-      const { data } = await api.readSchema(path);
-      this.loadSchema(data);
-      this.notify(`${t('loaded')}: ${path}`);
-    } catch (err) {
-      this.notify(`${t('error')}: ${err.message}`, 'error');
-    } finally {
-      this.busy = false;
-    }
-  }
 
   /** Сохранение текущей схемы. Без имени — уводит в диалог «Сохранить как». */
-  async save() {
-    const name = (this.name || '').trim();
-    if (!name) return false;
-    return this.saveAs(this.path || `schemas/${name}.json`, true);
-  }
-
-  async saveAs(path, silent = false) {
-    const rel = (path || '').trim();
-    if (!rel) return false;
-    this.busy = true;
-    try {
-      const payload = this.payload();
-      payload.meta.name = this.name || rel.replace(/\.json$/i, '').split('/').pop();
-      const result = await api.writeSchema(rel, payload);
-      this.path = result.path;
-      if (!this.name) this.name = payload.meta.name;
-      this.dirty = false;
-      if (!silent) this.notify(`${t('saved')}: ${result.path}`);
-      this.refreshRecent();
-      return true;
-    } catch (err) {
-      this.notify(`${t('error')}: ${err.message}`, 'error');
-      return false;
-    } finally {
-      this.busy = false;
-    }
-  }
-
   renameTo(name) {
     this.name = name;
     this.dirty = true;

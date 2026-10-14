@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live backend regression: generated launcher resolves current JSON, not an embedded snapshot.
+// Legacy optional-backend regression plus standalone HTML export contract.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -9,10 +9,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createShortcut } from './create-shortcut.mjs';
+import { renderStandaloneEditor } from './launcher.js';
 
 const sourceApp = path.dirname(fileURLToPath(import.meta.url));
 const temp = await mkdtemp(path.join(os.tmpdir(), 'seditor-http-test-'));
 const appDir = path.join(temp, 'app');
+const htmlRoot = path.join(temp, 'SEditor.html');
 let server;
 let port;
 
@@ -38,7 +40,16 @@ async function waitForServer(base) {
 }
 
 try {
+  const standaloneSource = await readFile(path.join(sourceApp, '..', 'SEditor.html'), 'utf8');
+  const standalone = await renderStandaloneEditor(standaloneSource, { version: 1, meta: { name: 'offline' }, nodes: [], edges: [] });
+  assert.match(standalone, /window\.__SEDITOR_INITIAL_SCHEMA__/);
+  assert.match(standalone, /"name":"offline"/);
+  assert.doesNotMatch(standalone, /<script\b[^>]*\bsrc=/i);
+  const hostile = await renderStandaloneEditor(standaloneSource, { version: 1, meta: { name: '</script><img src=x>' }, nodes: [], edges: [] });
+  assert.doesNotMatch(hostile.split('id="seditor-schema">')[1].split('</script>')[0], /</);
   await mkdir(path.join(appDir, 'schemas'), { recursive: true });
+  await writeFile(htmlRoot, await renderStandaloneEditor(standaloneSource, { version: 1, meta: { name: 'standalone' }, nodes: [], edges: [] }));
+  process.env.SEDITOR_HTML_ROOT = htmlRoot;
   for (const file of ['editor.html', 'server.js', 'create-shortcut.mjs', 'shortcut.html', 'launcher.js']) {
     await writeFile(path.join(appDir, file), await readFile(path.join(sourceApp, file)));
   }
@@ -49,7 +60,7 @@ try {
 
   const launcher = await createShortcut(schemaRel, { appDir });
   assert.equal(path.basename(launcher.path), 'схема & flow.html');
-  // Ярлык несёт саму схему и редиректит в общий редактор: открывается без сервера.
+  // Legacy path launchers still embed schema and redirect without a local server.
   assert.match(launcher.html, /#d=/, 'launcher must redirect into the editor with embedded data');
   assert.match(launcher.html, /"nodes"\s*:/, 'launcher must embed the schema so file:// works');
   assert.match(launcher.html, /<script type="application\/json" id="seditor-schema">/);
@@ -65,15 +76,18 @@ try {
 
   port = await unusedPort();
   server = spawn(process.execPath, [path.join(appDir, 'server.js')], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port) },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), SEDITOR_HTML_ROOT: htmlRoot },
     stdio: 'ignore'
   });
   const base = `http://127.0.0.1:${port}`;
   await waitForServer(base);
 
-  const page = await fetch(`${base}/editor.html?path=${encodeURIComponent(schemaRel)}`);
+  const page = await fetch(`${base}/SEditor.html`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /SEditor/);
+  assert.equal((await fetch(`${base}/`)).status, 200);
+  assert.equal((await fetch(`${base}/editor.html`)).status, 200, 'legacy runtime alias remains available');
+  assert.match(await (await fetch(`${base}/SEditor.html`)).text(), /"name":"standalone"/);
 
   const readCurrent = async () => {
     const response = await fetch(`${base}/api/schema?path=${encodeURIComponent(schemaRel)}`);
@@ -96,13 +110,17 @@ try {
   assert.equal(updated.meta.name, 'updated-by-agent');
   assert.equal(updated.nodes[0].data.label, 'Updated');
 
+  const movedLauncher = await renderStandaloneEditor(await readFile(htmlRoot, 'utf8'), original);
+  assert.match(movedLauncher, /Updated/);
+  assert.ok(movedLauncher.length < 400000, 'portable launcher remains practical for ordinary schemas');
+
   const badSchema = await fetch(`${base}/api/shortcut`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path: 'schemas/missing.json' })
   });
   assert.equal(badSchema.status, 400);
 
-  console.log('editor.test.mjs: live backend and path-launcher integration passed');
+  console.log('editor.test.mjs: optional backend and standalone launcher integration passed');
 } finally {
   if (server && server.exitCode === null) {
     server.kill('SIGTERM');

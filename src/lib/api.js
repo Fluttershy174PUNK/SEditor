@@ -1,4 +1,4 @@
-// Клиент файлового API (app/server.js). Всё асинхронное, ошибки — исключения с текстом.
+// Optional legacy local-backend client; the standalone editor does not call these endpoints.
 const req = async (url, options) => {
   const res = await fetch(url, options);
   const body = await res.json().catch(() => ({}));
@@ -6,35 +6,15 @@ const req = async (url, options) => {
   return body;
 };
 
-/** Список схем рядом с editor + папки, в которые можно писать. */
 export const listSchemas = () => req('/api/schemas');
-
-/** Листинг любой директории диска (пустой путь — корень проекта). */
 export const listDir = (path) => req(`/api/fs?path=${encodeURIComponent(path || '')}`);
-
-/** Чтение схемы по относительному пути. */
 export const readSchema = (path) => req(`/api/schema?path=${encodeURIComponent(path)}`);
-
-/** Запись схемы (формат SEditor v1 — см. src/lib/schema.js). */
-export const writeSchema = (path, data) =>
-  req('/api/schema', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path, data })
-  });
-
-/** Создать рядом с JSON ярлык, который всегда ссылается на исходный файл. */
-export const createShortcut = (path) =>
-  req('/api/shortcut', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path })
-  });
-
-/** Сохранение PNG (dataUrl) на диск. */
-export const writePng = (path, dataUrl) =>
-  req('/api/png', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path, dataUrl })
-  });
+export const writeSchema = (path, data) => req('/api/schema', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, data })
+});
+export const createShortcut = (path) => req('/api/shortcut', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path })
+});
+export const writePng = (path, dataUrl) => req('/api/png', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path, dataUrl })
+});

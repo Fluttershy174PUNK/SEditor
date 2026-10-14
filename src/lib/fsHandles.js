@@ -1,13 +1,18 @@
-// Постоянный доступ к папке схемы в режиме без сервера (file://).
-// Пользователь один раз выбирает папку, handle переживает перезагрузку в IndexedDB.
+// Browser file handles persist only where IndexedDB and stable secure origins are available.
+export const recentHandlePickerAvailable = Boolean(
+  typeof indexedDB !== 'undefined' && typeof window !== 'undefined' && window.isSecureContext && typeof crypto?.randomUUID === 'function'
+);
+
 const DB = 'seditor-fs';
 const STORE = 'handles';
-const KEY = 'schema-dir';
+const RECENT_KEY = 'recent-schemas';
 
 const openDb = () =>
   new Promise((resolve, reject) => {
     const request = indexedDB.open(DB, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -26,41 +31,33 @@ const idb = async (mode, run) => {
   }
 };
 
-export const loadDirHandle = () => idb('readonly', (store) => store.get(KEY)).catch(() => null);
-export const saveDirHandle = (handle) => idb('readwrite', (store) => store.put(handle, KEY)).catch(() => null);
+export const listRecentHandles = () => recentHandlePickerAvailable
+  ? idb('readonly', (store) => store.get(RECENT_KEY)).then((items) => items || []).catch(() => [])
+  : Promise.resolve([]);
 
-/** Разрешение на запись: спрашиваем заново, если браузер его сбросил. */
-export const ensureWrite = async (handle) => {
+export const rememberFileHandle = async (handle) => {
+  if (!recentHandlePickerAvailable || typeof handle?.isSameEntry !== 'function') return [];
+  try {
+    const items = await listRecentHandles();
+    const matches = await Promise.all(items.map(async (item) => (await item.handle.isSameEntry(handle).catch(() => false)) ? item : null));
+    const entry = matches.find(Boolean) || { id: crypto.randomUUID() };
+    entry.name = handle.name;
+    entry.handle = handle;
+    const recent = [entry, ...items.filter((item) => item.id !== entry.id)].slice(0, 12);
+    await idb('readwrite', (store) => store.put(recent, RECENT_KEY));
+    return recent;
+  } catch {
+    return listRecentHandles();
+  }
+};
+
+export const ensureAccess = async (handle, mode = 'readwrite') => {
   if (!handle) return false;
-  const options = { mode: 'readwrite' };
+  const options = { mode };
   if ((await handle.queryPermission?.(options)) === 'granted') return true;
   return (await handle.requestPermission?.(options)) === 'granted';
 };
 
-/**
- * Папка для записи рядом с открытой схемой.
- * Без сервера единственный способ гарантировать «рядом» — выбрать папку один раз.
- */
-export const resolveOutputDir = async ({ prompt = false } = {}) => {
-  const known = await loadDirHandle();
-  if (known && (await ensureWrite(known))) return known;
-  if (!prompt || !window.showDirectoryPicker) return null;
-  const picked = await window.showDirectoryPicker({ id: 'seditor-schema-dir', mode: 'readwrite' });
-  await saveDirHandle(picked);
-  return picked;
-};
-
-/** Записать файл в папку; null-папка означает «писать некуда». */
-export const writeFileToDir = async (dir, filename, contents) => {
-  if (!dir) return false;
-  const fileHandle = await dir.getFileHandle(filename, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(contents);
-  await writable.close();
-  return true;
-};
-
-/** Скачивание — резервный путь для Firefox/Safari без File System Access API. */
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
