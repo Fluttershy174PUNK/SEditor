@@ -103,8 +103,8 @@ export const DICT = {
   added: { ru: 'Добавлено', en: 'Added' },
   clickOrDrag: { ru: 'клик или перетащите на поле', en: 'click or drag onto the canvas' },
   emptyCanvasHint: {
-    ru: 'Выберите фигуру в палитре справа — она появится здесь',
-    en: 'Pick a shape in the palette on the right — it will appear here'
+    ru: 'Откройте .json схему кнопкой «Открыть», перетащите файл на холст или выберите фигуру справа',
+    en: 'Open a .json schema with Open, drag a file onto the canvas, or pick a shape on the right'
   },
   selectAll: { ru: 'Выделить всё', en: 'Select all' },
   shortcutsHint: {

@@ -346,8 +346,8 @@
 <svelte:window onbeforeunload={onBeforeUnload} />
 
 <SvelteFlowProvider>
-  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onpng={openPng} onshortcut={exportLauncher} />
-  <FlowCanvas />
+  <TopBar onopen={openFiles} onopenrecent={openRecentFile} onsave={saveFile} onpng={openPng} />
+  <FlowCanvas onfiledrop={(file) => loadLocalFile(file)} />
   <!-- Правая колонка: палитра сверху, свойства под ней. -->
   <aside class="sidebar">
     <Palette />

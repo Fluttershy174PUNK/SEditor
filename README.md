@@ -4,9 +4,9 @@ A lightweight, portable HTML editor for flowcharts, architecture maps, and proje
 
 [Русская версия README](README.ru.md) · [Schema format](docs/schema-format.md) · [SEskill](https://github.com/Fluttershy174PUNK/SEskill)
 
-## Open and share a diagram
+## Open and edit a diagram
 
-Open JSON with the editor's **Open** button, or drop a JSON file onto the page. The **HTML** button downloads a portable, self-contained editor copy with the current diagram embedded. Move or share that file; it opens without a server.
+Open `SEditor.html` in a browser, then open any `.json` schema with the **Open** button or drag-and-drop a `.json` file directly onto the canvas. Save edits as `.json` or export a `.png` image.
 
 ## Features
 

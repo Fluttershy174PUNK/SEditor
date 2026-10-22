@@ -12,6 +12,7 @@
   import { t } from '../lib/i18n.svelte.js';
 
   const flow = useSvelteFlow();
+  let { onfiledrop = () => {} } = $props();
 
   const nodeTypes = {
     shape: ShapeNode,
@@ -49,16 +50,24 @@
     menu = null;
   };
 
-  // Перетаскивание из палитры: reorder-данные в dataTransfer.
+  // Перетаскивание фигуры из палитры или JSON-файла схемы прямо на холст.
   const onDrop = (event) => {
     const shape = event.dataTransfer?.getData(SHAPE_MIME);
-    if (!shape) return;
-    event.preventDefault();
-    const position = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    board.addNode(shape, position);
+    if (shape) {
+      event.preventDefault();
+      const position = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      board.addNode(shape, position);
+      return;
+    }
+    const file = [...(event.dataTransfer?.files || [])].find((f) => /\.json$/i.test(f.name) || f.type === 'application/json');
+    if (file) {
+      event.preventDefault();
+      onfiledrop(file);
+    }
   };
   const onDragOver = (event) => {
-    if (event.dataTransfer?.types?.includes(SHAPE_MIME)) {
+    const types = event.dataTransfer?.types || [];
+    if (types.includes(SHAPE_MIME) || types.includes('Files')) {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
     }

@@ -7,7 +7,7 @@
 
   const flow = useSvelteFlow();
 
-  let { onopen = () => {}, onopenrecent = () => {}, onsave = () => {}, onpng = () => {}, onshortcut = () => {} } = $props();
+  let { onopen = () => {}, onopenrecent = () => {}, onsave = () => {}, onpng = () => {} } = $props();
 
   let editingName = $state(false);
   let nameInput = $state('');
@@ -100,9 +100,6 @@
     </button>
     <button onclick={onsave} title={t('save')} aria-label={t('save')}>
       <PixelIcon name="save" size={14} /><span>{t('save')}</span>
-    </button>
-    <button onclick={onshortcut} title={t('createLauncher')} aria-label={t('createLauncher')}>
-      <PixelIcon name="html" size={14} /><span>HTML</span>
     </button>
   </div>
 
